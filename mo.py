@@ -1,20 +1,20 @@
-
 import os
-from pytube import YouTube
-from pytube import Search
-from collections import deque
+import pytube
 import asyncio
 import subprocess
 import threading
 import time
 import signal
 import random
+from collections import deque
 from dotenv import load_dotenv
 from highrise import BaseBot
 from highrise.__main__ import BotDefinition
 from highrise import *
 from highrise import BaseBot, __main__, CurrencyItem, Item, Position, AnchorPosition, SessionMetadata, User
+from youtubesearchpython import VideosSearch
 
+# إعدادات Icecast
 ICECAST_HOST = "link.zeno.fm"
 ICECAST_PORT = "80"
 ICECAST_USER = "source"
@@ -22,6 +22,7 @@ ICECAST_PASSWORD = "tXOQ2HbL"
 ICECAST_MOUNT= "gpo09g38vpkvv"
 ICECAST_URL = f"icecast://{ICECAST_USER}:{ICECAST_PASSWORD}@{ICECAST_HOST}:{ICECAST_PORT}/{ICECAST_MOUNT.strip()}"
 
+# المتغيرات العامة
 SONG_QUEUE = deque()
 current_process = None
 current_song = None
@@ -32,7 +33,6 @@ class Bot(BaseBot):
         super().__init__()
 
     async def on_start(self, session_metadata: SessionMetadata) -> None:
-        # بدء تشغيل أغنية عشوائية
         await add_random_song(asyncio.get_event_loop())
 
     async def on_chat(self, user: User, message: str) -> None:
@@ -69,7 +69,7 @@ class Bot(BaseBot):
     async def execute_command(self, command: str, arg: str):
         loop = asyncio.get_event_loop()
         if command == "play":
-            await self.highrise.chat(f"🔎جاري البحث عنها ...")
+            await self.highrise.chat(f"🔎 جاري البحث...")
             return await do_play(arg, loop)
         elif command == "playnow":
             return await do_play(arg, loop, immediate=True)
@@ -144,24 +144,25 @@ async def add_random_song(loop):
     random_query = random.choice(queries)
     await do_play(random_query, loop, immediate=True)
 
-
 async def do_play(song_query: str, loop, immediate=False) -> str:
     try:
-        # البحث عن الفيديو باستخدام pytube
-        s = Search(song_query)
-        results = s.results
+        # البحث باستخدام youtube-search-python
+        search = VideosSearch(song_query, limit=1)
+        results = search.result()["result"]
+        
         if not results:
             return "لم يتم العثور على نتائج"
 
-        # اختيار أول نتيجة
-        yt = results[0]
-        title = yt.title
+        # استخراج معلومات الفيديو
+        video_id = results[0]["id"]
+        video_url = f"https://youtu.be/{video_id}"
+        title = results[0]["title"]
 
-        # استخراج رابط الصوت
-        audio_stream = yt.streams.filter(only_audio=True).first()
+        # استخراج رابط الصوت باستخدام pytube
+        yt = pytube.YouTube(video_url)
+        audio_stream = yt.streams.get_audio_only()
         if not audio_stream:
             return "لا يوجد تدفق صوتي متاح"
-
         audio_url = audio_stream.url
 
         # إضافة إلى الطابور
@@ -173,7 +174,6 @@ async def do_play(song_query: str, loop, immediate=False) -> str:
 
         response = f"تمت الإضافة إلى قائمة الانتظار: {title}"
 
-        # بدء التشغيل إذا لم يكن هناك شيء يعمل
         if current_process is None:
             await stream_next_song(loop)
         elif immediate:
@@ -183,56 +183,13 @@ async def do_play(song_query: str, loop, immediate=False) -> str:
 
     except Exception as e:
         return f"خطأ: {str(e)}"
-async def do_play22(song_query: str, loop, immediate=False) -> str:
-    ydl_options = {
-        "format": "bestaudio/best",
-        "postprocessors": [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "mp3",
-            "preferredquality": "192",
-        }],
-        "extractor_args": {"youtube": {"player_client": ["android"]}},
-        "nocheckcertificate": True,
-        "ignoreerrors": True,
-        "quiet": True,
-        "no_warnings": True,
-    }
-
-    try:
-        query = "ytsearch1:" + song_query
-        results = await search_ytdlp_async(query, ydl_options)
-        tracks = results.get("entries", [])
-
-        if not tracks:
-            return "No results found."
-
-        first_track = tracks[0]
-        audio_url = first_track["url"]
-        title = first_track.get("title", "Untitled")
-
-        async with queue_lock:
-            if immediate:
-                SONG_QUEUE.appendleft((audio_url, title))
-            else:
-                SONG_QUEUE.append((audio_url, title))
-
-        response = f"Added to queue: {title}"
-
-        if current_process is None:
-            await stream_next_song(loop)
-        elif immediate:
-            current_process.send_signal(signal.SIGINT)
-
-        return response
-    except Exception as e:
-        return f"Error: {str(e)}"
 
 async def do_skip() -> str:
     global current_process
     if current_process is not None:
         current_process.send_signal(signal.SIGINT)
-        return "Skipping..."
-    return "Nothing playing."
+        return "جاري التخطي..."
+    return "لا يوجد شيء يعمل حاليًا"
 
 async def do_stop() -> str:
     global current_process, current_song
@@ -243,37 +200,29 @@ async def do_stop() -> str:
 
         SONG_QUEUE.clear()
         current_song = None
-    return "Stopped and cleared queue."
+    return "تم الإيقاف وتفريغ القائمة"
 
 async def do_queue() -> str:
     message = []
     async with queue_lock:
         if current_song:
-            message.append(f"Now Playing: {current_song[1]}")
+            message.append(f"الآن يعمل: {current_song[1]}")
         else:
-            message.append("Nothing playing.")
+            message.append("لا يوجد شيء يعمل حاليًا.")
 
         if SONG_QUEUE:
-            message.append("\nQueue:")
+            message.append("\nقائمة الانتظار:")
             for idx, (url, title) in enumerate(SONG_QUEUE, start=1):
                 message.append(f"{idx}. {title}")
         else:
-            message.append("\nQueue is empty.")
+            message.append("\nقائمة الانتظار فارغة.")
     return "\n".join(message)
 
 async def do_remove(position: int) -> str:
     async with queue_lock:
         if position < 1 or position > len(SONG_QUEUE):
-            return "Invalid position."
+            return "رقم غير صالح"
 
         removed_song = SONG_QUEUE[position-1]
         del SONG_QUEUE[position-1]
-        return f"Removed: {removed_song[1]}"
-
-async def search_ytdlp_async(query, ydl_opts):
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, lambda: _extract(query, ydl_opts))
-
-def _extract(query, ydl_opts):
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        return ydl.extract_info(query, download=False)
+        return f"تمت الإزالة: {removed_song[1]}"
