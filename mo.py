@@ -142,8 +142,56 @@ async def add_random_song(loop):
     queries = ["random music", "pop songs", "latest hits", "trending music"]
     random_query = random.choice(queries)
     await do_play(random_query, loop, immediate=True)
-
 async def do_play(song_query: str, loop, immediate=False) -> str:
+    ydl_options = {
+        "format": "bestaudio/best",
+        "postprocessors": [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "192",
+        }],
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android"],  # محاكاة تطبيق Android
+                "skip": ["auth"]  # تخطي خطوة المصادقة
+            }
+        },
+        "user_agent": "Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36",  # User-Agent محاكاة
+        "nocheckcertificate": True,
+        "ignoreerrors": True,
+        "quiet": True,
+        "no_warnings": True,
+    }
+
+    try:
+        query = "ytsearch1:" + song_query
+        results = await search_ytdlp_async(query, ydl_options)
+        tracks = results.get("entries", [])
+
+        if not tracks:
+            return "No results found."
+
+        first_track = tracks[0]
+        audio_url = first_track["url"]
+        title = first_track.get("title", "Untitled")
+
+        async with queue_lock:
+            if immediate:
+                SONG_QUEUE.appendleft((audio_url, title))
+            else:
+                SONG_QUEUE.append((audio_url, title))
+
+        response = f"تمت الإضافة إلى قائمة الانتظار: {title}"
+
+        if current_process is None:
+            await stream_next_song(loop)
+        elif immediate:
+            current_process.send_signal(signal.SIGINT)
+
+        return response
+    except Exception as e:
+        return f"Error: {str(e)}"
+async def do_play22(song_query: str, loop, immediate=False) -> str:
     ydl_options = {
         "format": "bestaudio/best",
         "postprocessors": [{
