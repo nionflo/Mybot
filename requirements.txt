@@ -1,4 +1,4 @@
-youtubesearchpython
+youtube-search-python
 pytube
 python-dotenv
 highrise-bot-sdk
