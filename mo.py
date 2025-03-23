@@ -29,11 +29,8 @@ queue_lock = asyncio.Lock()
 class Bot(BaseBot):
     def __init__(self):
         super().__init__()
-        self.terminal_thread = None
-    async def on_start(self, session_metadata: SessionMetadata) -> None:
-        self.terminal_thread = threading.Thread(target=self.terminal_command_listener, daemon=True)
-        self.terminal_thread.start()
 
+    async def on_start(self, session_metadata: SessionMetadata) -> None:
         # بدء تشغيل أغنية عشوائية
         await add_random_song(asyncio.get_event_loop())
 
@@ -43,6 +40,7 @@ class Bot(BaseBot):
             await self.highrise.chat(str(response))
         elif message.startswith("-") and user.username != "Q._14":
             await self.highrise.chat("ليس لديك صلاحيات التحكم في البوت")
+
     async def command_handler(self, user_id, message: str):
         help_msg = "🎵 الأوامر: \n-play [name] \n-skip \n -stop \n -queue \n-remove [id] \n -playnow [name] "
 
@@ -86,34 +84,6 @@ class Bot(BaseBot):
             except:
                 return "الرجاء إدخال رقم صحيح"
         return "أمر غير معروف"
-
-    def terminal_command_listener(self):
-        print("Terminal command listener is active...")
-        while True:
-            try:
-                cmd = input("Command (play/playnow/skip/stop/queue/remove): ")
-                future = asyncio.run_coroutine_threadsafe(
-                    self.handle_terminal_command(cmd),
-                    asyncio.get_event_loop()
-                )
-                print(future.result())
-            except Exception as e:
-                print(f"Error: {e}")
-
-    async def handle_terminal_command(self, command: str):
-        if command.startswith("playnow "):
-            return await do_play(command[8:], asyncio.get_event_loop(), immediate=True)
-        elif command.startswith("play "):
-            return await do_play(command[5:], asyncio.get_event_loop())
-        elif command == "skip":
-            return await do_skip()
-        elif command == "stop":
-            return await do_stop()
-        elif command == "queue":
-            return await do_queue()
-        elif command.startswith("remove "):
-            return await do_remove(int(command[7:]))
-        return "Unknown command"
 
 async def stream_next_song(loop):
     global current_process, current_song
