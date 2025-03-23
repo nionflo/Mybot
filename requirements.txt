@@ -1,3 +1,4 @@
+youtubesearchpython
 pytube
 python-dotenv
 highrise-bot-sdk
