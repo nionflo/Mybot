@@ -1,5 +1,4 @@
-youtube-search-python
-pytube
-python-dotenv
+aiofiles
 highrise-bot-sdk
 Flask
+aiohttp
